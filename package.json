@@ -1,0 +1,48 @@
+{
+  "name": "@dog_world/dak",
+  "version": "0.1.1",
+  "description": "Dog Agents Kit - agent skills CLI",
+  "type": "module",
+  "bin": {
+    "dak": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "type-check": "tsc --noEmit --project tsconfig.json",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "cli",
+    "agent-skills",
+    "skills",
+    "ai-agents",
+    "claude-code",
+    "codex"
+  ],
+  "license": "MIT",
+  "author": "dog_world",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zzy1099207684/dog-agents-kit.git"
+  },
+  "homepage": "https://github.com/zzy1099207684/dog-agents-kit#readme",
+  "bugs": {
+    "url": "https://github.com/zzy1099207684/dog-agents-kit/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "typescript": "^5",
+    "vitest": "^2"
+  }
+}
