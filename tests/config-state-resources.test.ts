@@ -43,6 +43,13 @@ describe('createDefaultConfig', () => {
     expect(config.store).toBe('/abs/store');
     expect(config.targets['codex'].path).toBe('/home/test/.codex');
     expect(config.targets['claudecode'].path).toBe('/home/test/.claude');
+    expect(config.targets['dsh'].path).toBe('/home/test/.dsh');
+  });
+
+  it('dsh 只管理 skills/hooks，不管理 agents', () => {
+    const config = createDefaultConfig('/abs/store', '/home/test');
+    expect(config.targets['dsh'].resources).toEqual({ skills: 'skills', hooks: 'hooks' });
+    expect(config.targets['dsh'].resources?.['agents']).toBeUndefined();
   });
 
   it('默认带 resourceTypes = skills/hooks/agents', () => {

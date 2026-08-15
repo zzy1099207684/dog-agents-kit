@@ -57,12 +57,13 @@ After `dak init`, `~/.dog-agents-kit/` (the default store) contains:
 └── agents/           # your agents source files
 ```
 
-The default config wires up two target tools (written automatically by `dak init`):
+The default config wires up three target tools (written automatically by `dak init`):
 
 | Target name  | Tool root   |
 | ------------ | ----------- |
 | `codex`      | `~/.codex`  |
 | `claudecode` | `~/.claude` |
+| `dsh`        | `~/.dsh` (skills + hooks only) |
 
 > The target name is a key you pick, not hardcoded. To add Cursor/Windsurf etc., just edit `dak.config.json`'s `targets` and add a line. Change store location with `dak init --store <path>`; multiple stores can coexist without interfering.
 
@@ -153,7 +154,8 @@ dak status                # 4. Check status to confirm
         "agents": "agents"
       }
     },
-    "claudecode": { "path": "~/.claude", "resources": { "skills": "skills", "hooks": "hooks", "agents": "agents" } }
+    "claudecode": { "path": "~/.claude", "resources": { "skills": "skills", "hooks": "hooks", "agents": "agents" } },
+    "dsh": { "path": "~/.dsh", "resources": { "skills": "skills", "hooks": "hooks" } }
     // add a new tool: add a line like "cursor": { "path": "...", "resources": { "skills": "skills" } }
   }
 }
@@ -234,12 +236,13 @@ npm link           # 注册全局命令 dak（或直接 node dist/cli.js）
 └── agents/           # 你的 agents 源文件
 ```
 
-默认配置两个目标工具（`dak init` 自动写入）：
+默认配置三个目标工具（`dak init` 自动写入）：
 
 | 目标名       | 工具根目录  |
 | ------------ | ----------- |
 | `codex`      | `~/.codex`  |
 | `claudecode` | `~/.claude` |
+| `dsh`        | `~/.dsh`（只管理 skills + hooks） |
 
 > 目标名是自己起的 key，不是写死的。想加 Cursor/Windsurf 等工具，直接编辑 `dak.config.json` 的 `targets` 加一行即可。换 store 位置用 `dak init --store <path>`，多 store 并存互不干扰。
 
@@ -330,7 +333,8 @@ dak status                # 4. 看状态确认
         "agents": "agents"
       }
     },
-    "claudecode": { "path": "~/.claude", "resources": { "skills": "skills", "hooks": "hooks", "agents": "agents" } }
+    "claudecode": { "path": "~/.claude", "resources": { "skills": "skills", "hooks": "hooks", "agents": "agents" } },
+    "dsh": { "path": "~/.dsh", "resources": { "skills": "skills", "hooks": "hooks" } }
     // 加新工具：在这加一行 "cursor": { "path": "...", "resources": { "skills": "skills" } }
   }
 }

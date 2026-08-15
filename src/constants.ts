@@ -25,5 +25,10 @@ export const DEFAULT_CONFIG: DakConfig = {
       path: '~/.claude',
       resources: { skills: 'skills', hooks: 'hooks', agents: 'agents' },
     },
+    'dsh': {
+      path: '~/.dsh',
+      // dsh 没有 dak 意义的 agents 目录：它的 agent preset 在 ~/.dsh/.agent-presets，是 dsh 自有概念，不纳入管理
+      resources: { skills: 'skills', hooks: 'hooks' },
+    },
   },
 };
