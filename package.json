@@ -1,6 +1,6 @@
 {
   "name": "@dog_world/dak",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Dog Agents Kit - agent skills CLI",
   "type": "module",
   "bin": {
