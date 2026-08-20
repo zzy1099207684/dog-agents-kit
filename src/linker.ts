@@ -38,6 +38,11 @@ export interface LinkItemInput {
    * 未提供时回退到 policy（默认 skip）。
    */
   resolveConflict?: () => Promise<ConflictPolicy> | ConflictPolicy;
+  /**
+   * 备份根目录。缺省时由 targetPath 上溯两级推出（<targetRoot>/<resourceType>/<item>）。
+   * 指令文件直接落在 target 根目录，上溯两级会跑到 target 之外，故必须显式传入。
+   */
+  backupRootDir?: string;
   now?: Date;
 }
 
@@ -103,12 +108,12 @@ async function createRelativeSymlink(sourcePath: string, targetPath: string): Pr
 
 /**
  * 移动旧内容到备份目录。
- * 备份根目录 = 目标 resource 根目录的父目录（即 target 根目录）下 .dak-backup。
+ * 备份根目录 = target 根目录下 .dak-backup。
  * 时间戳格式固定为 YYYYMMDDTHHmmssSSSZ（UTC）。
  */
 async function moveToBackup(
   targetPath: string,
-  storePath: string,
+  targetRootDir: string | undefined,
   resourceType: string,
   itemName: string,
   now: Date,
@@ -116,7 +121,7 @@ async function moveToBackup(
   const ts = formatBackupTimestamp(now);
   // targetPath = <targetRoot>/<resourceType>/<item>
   // resource root parent = targetRoot = dirname(dirname(targetPath))
-  const targetRoot = dirname(dirname(targetPath));
+  const targetRoot = targetRootDir ?? dirname(dirname(targetPath));
   const backupRoot = join(targetRoot, '.dak-backup');
   const backupPath = join(backupRoot, ts, resourceType, itemName);
   await mkdir(dirname(backupPath), { recursive: true });
@@ -137,7 +142,7 @@ function formatBackupTimestamp(now: Date): string {
  * linked 时也返回 record，供上层刷新 state（linkedAt/source 可能需要校正）。
  */
 export async function linkItem(input: LinkItemInput): Promise<LinkOutcome> {
-  const { sourcePath, targetPath, resourceType, itemName, storePath, resolveConflict, now } = input;
+  const { sourcePath, targetPath, resourceType, itemName, resolveConflict, backupRootDir, now } = input;
   const category = await classifyTarget(targetPath, sourcePath);
   const timestamp = now ?? new Date();
   const record: LinkRecord = {
@@ -163,7 +168,7 @@ export async function linkItem(input: LinkItemInput): Promise<LinkOutcome> {
     }
     // 删除旧内容（broken symlink 或真实文件）
     if (policy === 'backup') {
-      await moveToBackup(targetPath, storePath, resourceType, itemName, timestamp);
+      await moveToBackup(targetPath, backupRootDir, resourceType, itemName, timestamp);
     } else if (policy === 'overwrite') {
       try {
         await unlink(targetPath);

@@ -25,6 +25,12 @@ export interface TargetConfig {
   path: string;
   /** 各资源类型在目标中的子路径 */
   resources?: Partial<Record<ResourceType, string>>;
+  /**
+   * 该工具指令文件在根目录下的文件名（如 CLAUDE.md / AGENTS.md）。
+   * 各工具认的名字不同，但内容同源，故不走 resources 的"同名条目"映射。
+   * 缺失表示该工具不参与指令文件管理。
+   */
+  instructions?: string;
 }
 
 /** 持久化状态 */

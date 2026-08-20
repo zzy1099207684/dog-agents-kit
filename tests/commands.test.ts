@@ -358,3 +358,154 @@ describe('runUpdate 边界', () => {
     expect(state.targets['codex'].skills['foo']).toBeDefined();
   });
 });
+
+describe('instructions（CLAUDE.md / AGENTS.md 统一管理）', () => {
+  let tmp: string;
+  let store: string;
+  let home: string;
+  let codex: string;
+  let claude: string;
+
+  /** 备份路径：<targetRoot>/.dak-backup/<ts>/instructions/<store 条目名> */
+  function backupPath(targetRoot: string, itemName: string): string {
+    const ts = FIXED_NOW.toISOString().replace(/[-:]/g, '').replace('.', '');
+    return join(targetRoot, '.dak-backup', ts, 'instructions', itemName);
+  }
+
+  beforeEach(async () => {
+    tmp = mkdtempSync(join(tmpdir(), TMP_PREFIX));
+    store = makeStore(tmp);
+    home = makeHome(tmp);
+    codex = join(home, '.codex');
+    claude = join(home, '.claude');
+    await runInit({ store, homeDir: home });
+    writeFileSync(join(store, 'instructions', 'rules.md'), 'RULES');
+  });
+
+  afterEach(() => {
+    rmSync(tmp, { recursive: true });
+  });
+
+  it('一份源分别链接到各 target 认的文件名', async () => {
+    await runLink('all', { store, homeDir: home, now: FIXED_NOW });
+    const { lstatSync } = await import('node:fs');
+    expect(lstatSync(join(codex, 'AGENTS.md')).isSymbolicLink()).toBe(true);
+    expect(lstatSync(join(claude, 'CLAUDE.md')).isSymbolicLink()).toBe(true);
+    expect(readFileSync(join(codex, 'AGENTS.md'), 'utf-8')).toBe('RULES');
+    expect(readFileSync(join(claude, 'CLAUDE.md'), 'utf-8')).toBe('RULES');
+    // state 以 store 条目名为键
+    const state = JSON.parse(readFileSync(join(store, '.dak-state.json'), 'utf-8'));
+    expect(state.targets['codex'].instructions['rules.md'].target).toBe(join(codex, 'AGENTS.md'));
+  });
+
+  it('store 放多份时报错中止，不建任何链接', async () => {
+    writeFileSync(join(store, 'instructions', 'extra.md'), 'OTHER');
+    await expect(
+      runLink('codex', { store, homeDir: home, now: FIXED_NOW }),
+    ).rejects.toThrow('instructions/ must contain exactly one file, found 2: extra.md, rules.md');
+    const { existsSync } = await import('node:fs');
+    expect(existsSync(join(codex, 'AGENTS.md'))).toBe(false);
+  });
+
+  it('store 一份都没有时静默跳过，其他资源照常', async () => {
+    rmSync(join(store, 'instructions', 'rules.md'));
+    writeFileSync(join(store, 'skills', 'foo'), 'x');
+    const output = await runLink('codex', { store, homeDir: home, now: FIXED_NOW });
+    const { existsSync } = await import('node:fs');
+    expect(existsSync(join(codex, 'AGENTS.md'))).toBe(false);
+    expect(output).toContain('skills/foo');
+  });
+
+  it('目标是真实文件时改名备份再建链接', async () => {
+    writeFileSync(join(codex, 'AGENTS.md'), 'HAND-WRITTEN');
+    await runLink('codex', { store, homeDir: home, now: FIXED_NOW });
+    expect(readFileSync(backupPath(codex, 'rules.md'), 'utf-8')).toBe('HAND-WRITTEN');
+    expect(readFileSync(join(codex, 'AGENTS.md'), 'utf-8')).toBe('RULES');
+  });
+
+  it('--on-conflict overwrite 不影响指令文件，仍然备份', async () => {
+    writeFileSync(join(codex, 'AGENTS.md'), 'HAND-WRITTEN');
+    await runLink('codex', { store, homeDir: home, conflictPolicy: 'overwrite', now: FIXED_NOW });
+    expect(readFileSync(backupPath(codex, 'rules.md'), 'utf-8')).toBe('HAND-WRITTEN');
+  });
+
+  it('目标是指向别处的软链接时也当冲突备份', async () => {
+    const elsewhere = join(tmp, 'elsewhere.md');
+    writeFileSync(elsewhere, 'ELSEWHERE');
+    symlinkSync(elsewhere, join(codex, 'AGENTS.md'));
+    await runLink('codex', { store, homeDir: home, now: FIXED_NOW });
+    // 旧链接被整体移入备份，指向不变
+    expect(readFileSync(backupPath(codex, 'rules.md'), 'utf-8')).toBe('ELSEWHERE');
+    expect(readFileSync(join(codex, 'AGENTS.md'), 'utf-8')).toBe('RULES');
+  });
+
+  it('目标已是指向 store 的链接时跳过，不产生备份', async () => {
+    await runLink('codex', { store, homeDir: home, now: FIXED_NOW });
+    const output = await runLink('codex', { store, homeDir: home, now: FIXED_NOW });
+    expect(output).toContain('instructions/rules.md linked');
+    const { existsSync } = await import('node:fs');
+    expect(existsSync(join(codex, '.dak-backup'))).toBe(false);
+  });
+
+  it('老配置缺 instructions 字段时自动回填默认文件名', async () => {
+    const configPath = join(store, 'dak.config.json');
+    const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+    delete config.targets.codex.instructions;
+    writeFileSync(configPath, JSON.stringify(config, null, 2));
+    await runLink('codex', { store, homeDir: home, now: FIXED_NOW });
+    // 回填后照常链接，老用户升级无需手改配置
+    expect(readFileSync(join(codex, 'AGENTS.md'), 'utf-8')).toBe('RULES');
+    // 只补内存，磁盘配置不被改写
+    expect(JSON.parse(readFileSync(configPath, 'utf-8')).targets.codex.instructions).toBeUndefined();
+  });
+
+  it('自定义 target 无默认文件名可回填时跳过', async () => {
+    const configPath = join(store, 'dak.config.json');
+    const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+    config.targets.cursor = { path: join(home, '.cursor'), resources: { skills: 'skills' } };
+    writeFileSync(configPath, JSON.stringify(config, null, 2));
+    await runLink('cursor', { store, homeDir: home, now: FIXED_NOW });
+    const { existsSync } = await import('node:fs');
+    expect(existsSync(join(home, '.cursor', 'AGENTS.md'))).toBe(false);
+    expect(existsSync(join(home, '.cursor', 'CLAUDE.md'))).toBe(false);
+  });
+
+  it('-r instructions 只处理指令文件', async () => {
+    writeFileSync(join(store, 'skills', 'foo'), 'x');
+    await runLink('codex', { store, homeDir: home, resource: 'instructions', now: FIXED_NOW });
+    const { existsSync } = await import('node:fs');
+    expect(existsSync(join(codex, 'AGENTS.md'))).toBe(true);
+    expect(existsSync(join(codex, 'skills', 'foo'))).toBe(false);
+  });
+
+  it('store 源删除后 update 清理链接，unlink 移除链接', async () => {
+    await runLink('codex', { store, homeDir: home, now: FIXED_NOW });
+    await runUnlink('codex', { store, homeDir: home, now: FIXED_NOW });
+    const { existsSync } = await import('node:fs');
+    expect(existsSync(join(codex, 'AGENTS.md'))).toBe(false);
+
+    await runLink('codex', { store, homeDir: home, now: FIXED_NOW });
+    rmSync(join(store, 'instructions', 'rules.md'));
+    const output = await runUpdate({ store, homeDir: home, now: FIXED_NOW });
+    expect(output).toContain('instructions/rules.md deleted');
+    expect(existsSync(join(codex, 'AGENTS.md'))).toBe(false);
+  });
+
+  it('runList 列出 instructions，多份时也全部列出', async () => {
+    writeFileSync(join(store, 'instructions', 'extra.md'), 'OTHER');
+    const output = await runList({ store, homeDir: home });
+    expect(output).toContain('Instructions:');
+    expect(output).toContain('rules.md');
+    expect(output).toContain('extra.md');
+  });
+
+  it('resourceTypes 声明 instructions 时报保留名错误', async () => {
+    const configPath = join(store, 'dak.config.json');
+    const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+    config.resourceTypes = ['skills', 'hooks', 'agents', 'instructions'];
+    writeFileSync(configPath, JSON.stringify(config, null, 2));
+    await expect(runLink('codex', { store, homeDir: home, now: FIXED_NOW })).rejects.toThrow(
+      'instructions is reserved',
+    );
+  });
+});

@@ -54,16 +54,17 @@ After `dak init`, `~/.dog-agents-kit/` (the default store) contains:
 ├── .dak-state.json   # link state (managed by dak, don't hand-edit)
 ├── skills/           # your skills source files
 ├── hooks/            # your hooks source files
-└── agents/           # your agents source files
+├── agents/           # your agents source files
+└── instructions/     # the single shared instruction file (see below)
 ```
 
 The default config wires up three target tools (written automatically by `dak init`):
 
-| Target name  | Tool root   |
-| ------------ | ----------- |
-| `codex`      | `~/.codex`  |
-| `claudecode` | `~/.claude` |
-| `dsh`        | `~/.dsh` (skills + hooks only) |
+| Target name  | Tool root   | Instruction file |
+| ------------ | ----------- | ---------------- |
+| `codex`      | `~/.codex`  | `AGENTS.md`      |
+| `claudecode` | `~/.claude` | `CLAUDE.md`      |
+| `dsh`        | `~/.dsh` (skills + hooks only) | `AGENTS.md` |
 
 > The target name is a key you pick, not hardcoded. To add Cursor/Windsurf etc., just edit `dak.config.json`'s `targets` and add a line. Change store location with `dak init --store <path>`; multiple stores can coexist without interfering.
 
@@ -83,6 +84,7 @@ The default config wires up three target tools (written automatically by `dak in
 | Link hooks only                     | `dak link codex -r hooks`              |
 | Link skills only                    | `dak link codex -r skills`             |
 | Link agents only                    | `dak link codex -r agents`             |
+| Link the instruction file only      | `dak link all -r instructions`         |
 | Backup old file on conflict, link   | `dak link codex --on-conflict backup`  |
 | Overwrite on conflict               | `dak link all --on-conflict overwrite` |
 | View link status                    | `dak status`                           |
@@ -100,7 +102,7 @@ The default config wires up three target tools (written automatically by `dak in
 | Command         | Explanation                                                                                          |
 | --------------- | ---------------------------------------------------------------------------------------------------- |
 | `init`          | Run first. Creates the store dir, default config `dak.config.json`, and an empty state file. Does not overwrite an existing config. |
-| `list`          | Lists existing skills / hooks / agents in the store (marks `[dir]` folders, `[link]` symlinks). Never touches any links. |
+| `list`          | Lists existing skills / hooks / agents / instructions in the store (marks `[dir]` folders, `[link]` symlinks). Never touches any links. |
 | `link <target>` | Symlinks store resources into the given target tool dir. `all` = every target in the config. Conflicts handled by `--on-conflict`. |
 | `status`        | Shows each resource's link status in the target (`linked`/`missing`/`stale`/`broken`/`conflict`). Read-only. |
 | `update`        | Aligns store with already-linked targets: new resources in store get linked, removed resources get unlinked. |
@@ -111,16 +113,46 @@ The default config wires up three target tools (written automatically by `dak in
 | Flag                                     | Description                                                                                | Applies to                              |
 | ---------------------------------------- | ------------------------------------------------------------------------------------------ | --------------------------------------- |
 | `--store <path>`                         | Specify store path (must match the `store` in config, else `config store mismatch`)        | all                                     |
-| `-r` / `--resource <type>`               | Process only one resource type (`skills`/`hooks`/`agents` or custom types declared in config); omit to process all three | `link` / `unlink` / `status` / `update` |
+| `-r` / `--resource <type>`               | Process only one resource type (`skills`/`hooks`/`agents`/`instructions` or custom types declared in config); omit to process all of them | `link` / `unlink` / `status` / `update` |
 | `--on-conflict <skip\|backup\|overwrite>` | Conflict strategy: skip / backup old / overwrite old                                      | `link` / `update`                       |
 
 > When no conflict strategy is passed: in an interactive terminal (TTY) dak asks per item `[s]kip/[b]ackup/[o]verwrite` (default skip); non-interactive (script/pipe) just skips.
 > **Protection rule**: real files, links from other stores, and hand-modified links are always protected (`conflict` status) under `update`/`unlink` — even `--on-conflict overwrite` won't delete them.
+> **`--on-conflict` does not apply to the instruction file**: it always backs the old content up, see [Instruction file](#instruction-file-claudemd--agentsmd).
+
+## Instruction file (`CLAUDE.md` / `AGENTS.md`)
+
+Every tool reads its top-level instruction file under a different name — Claude Code reads `CLAUDE.md`, Codex and dsh read `AGENTS.md` — but the content is normally the same. dak keeps **one** copy in the store and links it into each tool under the name that tool expects:
+
+```
+~/.dog-agents-kit/instructions/rules.md   # the single source (name it whatever you like)
+        ├─→ ~/.claude/CLAUDE.md           # symlink
+        ├─→ ~/.codex/AGENTS.md            # symlink
+        └─→ ~/.dsh/AGENTS.md              # symlink
+```
+
+Rules:
+
+- **The store may hold exactly one file.** A tool root can only have one instruction file, so with two or more in `instructions/` dak cannot tell which to link: it prints a red error and aborts without linking anything. Delete the extras and keep one. (`dak list` still lists them all, so you can see what to delete.)
+- **An empty `instructions/` is silently skipped** — other resource types are linked as usual.
+- **Conflicts are always backed up, never overwritten or skipped**, because the instruction file occupies a fixed name in the tool root. `--on-conflict` is ignored here. Concretely:
+
+| What's already at the target path        | What dak does                                |
+| ---------------------------------------- | -------------------------------------------- |
+| nothing                                   | create the symlink                            |
+| a real file (e.g. your hand-written `CLAUDE.md`) | move it to `<tool root>/.dak-backup/<timestamp>/instructions/`, then create the symlink |
+| a symlink already pointing at this store's source | already correct, left alone (`linked`)   |
+| a symlink pointing somewhere else         | treated as a conflict: backed up, then re-created |
+
+- **Upgrading from an older version needs no config edit.** `dak init` never overwrites an existing `dak.config.json`, so a config written before this feature has no `instructions` field. dak fills in the default name for the known targets (`codex`/`claudecode`/`dsh`) while reading the config, so upgrading and running `dak link all` just works. The file on disk is not rewritten.
+- **A custom target you added yourself** (e.g. `cursor`) has no default name to fall back on, so it stays out until you write its `instructions` yourself.
+- To leave a tool alone, link per target (`dak link codex`) instead of deleting the config field — a deleted field on a known target is filled back in.
+- `instructions` is a reserved type name and cannot be declared in `resourceTypes`.
 
 ## Quick start
 
 ```bash
-dak init                  # 1. Create the default store (~/.dog-agents-kit/{skills,hooks,agents}/ three empty dirs)
+dak init                  # 1. Create the default store (~/.dog-agents-kit/{skills,hooks,agents,instructions}/ empty dirs)
 dak link all              # 3. Wire up codex + claudecode at once
 dak status                # 4. Check status to confirm
 # After that, edit source files in the store → all tools see it immediately;
@@ -134,6 +166,7 @@ dak status                # 4. Check status to confirm
 > | skill source    | `~/.dog-agents-kit/skills/`           |
 > | hook source     | `~/.dog-agents-kit/hooks/`            |
 > | agent source    | `~/.dog-agents-kit/agents/`           |
+> | instruction file (`CLAUDE.md` / `AGENTS.md` content) | `~/.dog-agents-kit/instructions/` — **one file only** |
 >
 > Example: you previously kept two copies of the same skill at `~/.claude/skills/foo` and `~/.codex/skills/foo`. Now keep only the store copy (`~/.dog-agents-kit/skills/foo`); delete the other two or let `dak link --on-conflict backup` handle them, and editing this one copy updates both tools.
 
@@ -152,10 +185,11 @@ dak status                # 4. Check status to confirm
         "skills": "skills",
         "hooks": "hooks",
         "agents": "agents"
-      }
+      },
+      "instructions": "AGENTS.md"      // instruction file name in the tool root; auto-filled for known targets if absent
     },
-    "claudecode": { "path": "~/.claude", "resources": { "skills": "skills", "hooks": "hooks", "agents": "agents" } },
-    "dsh": { "path": "~/.dsh", "resources": { "skills": "skills", "hooks": "hooks" } }
+    "claudecode": { "path": "~/.claude", "resources": { "skills": "skills", "hooks": "hooks", "agents": "agents" }, "instructions": "CLAUDE.md" },
+    "dsh": { "path": "~/.dsh", "resources": { "skills": "skills", "hooks": "hooks" }, "instructions": "AGENTS.md" }
     // add a new tool: add a line like "cursor": { "path": "...", "resources": { "skills": "skills" } }
   }
 }
@@ -233,16 +267,17 @@ npm link           # 注册全局命令 dak（或直接 node dist/cli.js）
 ├── .dak-state.json   # 链接状态（dak 自维护，别手改）
 ├── skills/           # 你的 skills 源文件
 ├── hooks/            # 你的 hooks 源文件
-└── agents/           # 你的 agents 源文件
+├── agents/           # 你的 agents 源文件
+└── instructions/     # 共用的那一份指令文件（详见下文）
 ```
 
 默认配置三个目标工具（`dak init` 自动写入）：
 
-| 目标名       | 工具根目录  |
-| ------------ | ----------- |
-| `codex`      | `~/.codex`  |
-| `claudecode` | `~/.claude` |
-| `dsh`        | `~/.dsh`（只管理 skills + hooks） |
+| 目标名       | 工具根目录  | 指令文件名  |
+| ------------ | ----------- | ----------- |
+| `codex`      | `~/.codex`  | `AGENTS.md` |
+| `claudecode` | `~/.claude` | `CLAUDE.md` |
+| `dsh`        | `~/.dsh`（只管理 skills + hooks） | `AGENTS.md` |
 
 > 目标名是自己起的 key，不是写死的。想加 Cursor/Windsurf 等工具，直接编辑 `dak.config.json` 的 `targets` 加一行即可。换 store 位置用 `dak init --store <path>`，多 store 并存互不干扰。
 
@@ -262,6 +297,7 @@ npm link           # 注册全局命令 dak（或直接 node dist/cli.js）
 | 只链 hooks             | `dak link codex -r hooks`              |
 | 只链 skills            | `dak link codex -r skills`             |
 | 只链 agents            | `dak link codex -r agents`             |
+| 只链指令文件           | `dak link all -r instructions`         |
 | 冲突时备份旧文件再链   | `dak link codex --on-conflict backup`  |
 | 冲突时直接覆盖         | `dak link all --on-conflict overwrite` |
 | 查看链接状态           | `dak status`                           |
@@ -279,7 +315,7 @@ npm link           # 注册全局命令 dak（或直接 node dist/cli.js）
 | 指令            | 解释                                                                                               |
 | --------------- | -------------------------------------------------------------------------------------------------- |
 | `init`          | 首次使用跑。建 store 目录、生成默认配置 `dak.config.json` 和空状态文件。配置已存在则不覆盖。       |
-| `list`          | 列出 store 里现有的 skills / hooks / agents（标注 `[dir]` 文件夹、`[link]` 软链）。不碰任何链接。  |
+| `list`          | 列出 store 里现有的 skills / hooks / agents / instructions（标注 `[dir]` 文件夹、`[link]` 软链）。不碰任何链接。 |
 | `link <目标>`   | 把 store 资源软链接到指定目标工具目录。`all` = 配置里所有目标。冲突按 `--on-conflict` 处理。       |
 | `status`        | 查看每个资源在目标里的链接状态（`linked`/`missing`/`stale`/`broken`/`conflict`）。只读，不改东西。 |
 | `update`        | 对齐 store 与已链接目标：store 新增的资源自动补链、store 删掉的资源自动清链。                      |
@@ -290,16 +326,46 @@ npm link           # 注册全局命令 dak（或直接 node dist/cli.js）
 | 参数                                      | 说明                                                                                       | 适用命令                                |
 | ----------------------------------------- | ------------------------------------------------------------------------------------------ | --------------------------------------- |
 | `--store <path>`                          | 指定 store 路径（须与配置里 `store` 一致，否则报 `config store mismatch`）                 | 全部                                    |
-| `-r` / `--resource <类型>`                | 只处理某一类资源（`skills`/`hooks`/`agents` 或 config 声明的自定义类型），不传则三类全处理 | `link` / `unlink` / `status` / `update` |
+| `-r` / `--resource <类型>`                | 只处理某一类资源（`skills`/`hooks`/`agents`/`instructions` 或 config 声明的自定义类型），不传则全部处理 | `link` / `unlink` / `status` / `update` |
 | `--on-conflict <skip\|backup\|overwrite>` | 冲突处理策略：跳过 / 备份旧的 / 覆盖旧的                                                   | `link` / `update`                       |
 
 > 冲突策略没传时：交互式终端（TTY）里 dak 逐个问你 `[s]kip/[b]ackup/[o]verwrite`（默认 skip）；非交互（脚本/管道）直接 skip。
 > **保护规则**：真实文件、其他 store 的链接、手动改过的链接，在 `update`/`unlink` 里永远受保护（`conflict` 状态），传 `--on-conflict overwrite` 也不会删。
+> **`--on-conflict` 对指令文件不生效**：它永远先备份旧内容，详见 [指令文件](#指令文件claudemd--agentsmd)。
+
+## 指令文件（`CLAUDE.md` / `AGENTS.md`）
+
+每个工具认的顶层指令文件名字不一样——Claude Code 认 `CLAUDE.md`，Codex 和 dsh 认 `AGENTS.md`——但内容通常是同一份。dak 让你在 store 里**只放一份**，再按各工具认的名字分别链过去：
+
+```
+~/.dog-agents-kit/instructions/rules.md   # 唯一的源（名字随你起）
+        ├─→ ~/.claude/CLAUDE.md           # 软链接
+        ├─→ ~/.codex/AGENTS.md            # 软链接
+        └─→ ~/.dsh/AGENTS.md              # 软链接
+```
+
+规则：
+
+- **store 里只准放一个文件。** 一个工具根目录只能有一个指令文件，`instructions/` 里放两个及以上时 dak 无法判断该链哪个：直接红字报错并中止，不建任何链接，请删到只剩一个。（`dak list` 仍会全部列出来，方便你看清要删哪个。）
+- **`instructions/` 空着就静默跳过**，其他资源照常链接。
+- **冲突一律备份，不覆盖也不跳过**，因为指令文件占的是工具根目录里的固定文件名，`--on-conflict` 在这里被忽略。具体是：
+
+| 目标位置现在是什么                     | dak 怎么做                                    |
+| -------------------------------------- | --------------------------------------------- |
+| 什么都没有                             | 直接建软链接                                  |
+| 真实文件（比如你手写的 `CLAUDE.md`）   | 移到 `<工具根目录>/.dak-backup/<时间戳>/instructions/`，再建软链接 |
+| 已经指向本 store 那份源的软链接        | 本来就对，跳过（`linked`）                    |
+| 指向别处的软链接                       | 当冲突处理：先备份，再重建                    |
+
+- **老版本升级过来不用改配置。** `dak init` 不覆盖已存在的 `dak.config.json`，所以这个功能之前生成的配置里没有 `instructions` 字段。dak 读配置时会给已知的三个目标（`codex`/`claudecode`/`dsh`）自动补上默认文件名，升级后直接 `dak link all` 就生效，磁盘上的配置文件不会被改写。
+- **你自己加的第三方目标**（比如 `cursor`）没有默认文件名可补，得自己写上 `instructions` 才会参与。
+- 想让某个工具不被碰，用 `dak link <目标>` 按目标执行，别靠删配置字段 —— 已知目标删了会被自动补回来。
+- `instructions` 是保留类型名，不能写进 `resourceTypes`。
 
 ## 快速上手
 
 ```bash
-dak init                  # 1. 建默认 store (~/.dog-agents-kit/{skills,hooks,agents}/ 三个空目录)
+dak init                  # 1. 建默认 store (~/.dog-agents-kit/{skills,hooks,agents,instructions}/ 几个空目录)
 dak link all              # 3. 一键链到 codex + claudecode
 dak status                # 4. 看状态确认
 # 之后改了 store 里的源文件 → 所有工具立即可见；
@@ -313,6 +379,7 @@ dak status                # 4. 看状态确认
 > | skill 源文件   | `~/.dog-agents-kit/skills/`          |
 > | hook 源文件    | `~/.dog-agents-kit/hooks/`           |
 > | agent 源文件   | `~/.dog-agents-kit/agents/`          |
+> | 指令文件（`CLAUDE.md` / `AGENTS.md` 的内容） | `~/.dog-agents-kit/instructions/`——**只能放一个** |
 >
 > 举例：你原先在 `~/.claude/skills/foo` 和 `~/.codex/skills/foo` 各存了一份同一个 skill，现在只留 store 这一份（`~/.dog-agents-kit/skills/foo`），原两处删掉或让 `dak link` 用 `--on-conflict backup` 处理，之后改这一份两边都生效。
 
@@ -331,10 +398,11 @@ dak status                # 4. 看状态确认
         "skills": "skills",
         "hooks": "hooks",
         "agents": "agents"
-      }
+      },
+      "instructions": "AGENTS.md"      // 指令文件在工具根目录里的文件名；已知目标不写会自动补上
     },
-    "claudecode": { "path": "~/.claude", "resources": { "skills": "skills", "hooks": "hooks", "agents": "agents" } },
-    "dsh": { "path": "~/.dsh", "resources": { "skills": "skills", "hooks": "hooks" } }
+    "claudecode": { "path": "~/.claude", "resources": { "skills": "skills", "hooks": "hooks", "agents": "agents" }, "instructions": "CLAUDE.md" },
+    "dsh": { "path": "~/.dsh", "resources": { "skills": "skills", "hooks": "hooks" }, "instructions": "AGENTS.md" }
     // 加新工具：在这加一行 "cursor": { "path": "...", "resources": { "skills": "skills" } }
   }
 }

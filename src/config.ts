@@ -3,7 +3,7 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { DEFAULT_CONFIG, DEFAULT_STORE, CONFIG_FILE } from './constants.js';
+import { DEFAULT_CONFIG, DEFAULT_STORE, CONFIG_FILE, INSTRUCTIONS_TYPE } from './constants.js';
 import type { DakConfig } from './types.js';
 import { DEFAULT_RESOURCE_TYPES } from './types.js';
 import { assertSafeItemName, expandHome, toAbsolutePath } from './paths.js';
@@ -37,11 +37,12 @@ export function resolveStorePath(storeArg?: string, homeDir?: string): string {
  */
 export function createDefaultConfig(storePath: string, homeDir?: string): DakConfig {
   const home = homeDir ?? process.env.HOME ?? '';
-  const targets: Record<string, { path: string; resources?: Partial<Record<string, string>> }> = {};
+  const targets: DakConfig['targets'] = {};
   for (const [name, t] of Object.entries(DEFAULT_CONFIG.targets)) {
     targets[name] = {
       path: toAbsolutePath(t.path, home, home),
       resources: t.resources,
+      instructions: t.instructions,
     };
   }
   return { store: storePath, resourceTypes: [...DEFAULT_RESOURCE_TYPES], targets };
@@ -58,12 +59,29 @@ export async function readConfig(storePath: string): Promise<DakConfig> {
   const raw = await readFile(configPath, 'utf-8');
   const config = JSON.parse(raw) as DakConfig;
   validateConfigShape(config);
+  applyInstructionDefaults(config);
   return config;
 }
 
 /**
+ * 为缺少 instructions 的已知目标回填默认文件名。
+ * dak init 不覆盖已有配置，老用户升级后配置里不会自然长出该字段，
+ * 回填使升级即生效，无需手改配置。只改内存对象，不回写磁盘。
+ * 想让某个工具不参与，用 `dak link <target>` 按目标执行，不靠删配置字段表达。
+ */
+function applyInstructionDefaults(config: DakConfig): void {
+  for (const [name, t] of Object.entries(config.targets)) {
+    if (t.instructions !== undefined) continue;
+    // 自定义目标（如 cursor）没有默认文件名可回填，保持不参与
+    const fallback = DEFAULT_CONFIG.targets[name]?.instructions;
+    if (fallback) t.instructions = fallback;
+  }
+}
+
+/**
  * 校验 config 结构：targets 必须存在；resourceTypes 中每个类型名必须合法；
- * target.resources 的 key 必须在声明的 resourceTypes 内。
+ * target.resources 的 key 必须在声明的 resourceTypes 内；
+ * target.instructions 必须是合法文件名。
  * @throws 结构非法时抛错
  */
 function validateConfigShape(config: DakConfig): void {
@@ -71,6 +89,10 @@ function validateConfigShape(config: DakConfig): void {
     throw new Error('Invalid config: targets missing');
   }
   const validResources = new Set<string>(declaredResourceTypes(config));
+  // instructions 走独立映射规则，若混入 resourceTypes 会被通用循环按"子目录 + 同名条目"处理，生成错误路径
+  if (validResources.has(INSTRUCTIONS_TYPE)) {
+    throw new Error(`Invalid config: ${INSTRUCTIONS_TYPE} is reserved and cannot be declared in resourceTypes`);
+  }
   for (const type of validResources) {
     assertSafeItemName(type);
   }
@@ -83,6 +105,16 @@ function validateConfigShape(config: DakConfig): void {
         if (!validResources.has(key)) {
           throw new Error(`Invalid config: target ${name} has unknown resource type ${key}`);
         }
+      }
+    }
+    if (t.instructions !== undefined) {
+      if (typeof t.instructions !== 'string') {
+        throw new Error(`Invalid config: target ${name} instructions must be a string`);
+      }
+      try {
+        assertSafeItemName(t.instructions);
+      } catch {
+        throw new Error(`Invalid config: target ${name} has invalid instructions file name`);
       }
     }
   }

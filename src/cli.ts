@@ -7,6 +7,16 @@ import { stdin as input, stdout as output } from 'node:process';
 import { assertSafeItemName } from './paths.js';
 import type { ConflictPolicy } from './types.js';
 
+/**
+ * 给文本加红色 ANSI 转义。
+ * 手写转义而非引入依赖：项目目前无运行时依赖，不为一个颜色破例。
+ * 非 TTY（重定向、管道）或设置 NO_COLOR 时返回原文，避免污染输出。
+ */
+function red(text: string): string {
+  if (!process.stderr.isTTY || process.env.NO_COLOR) return text;
+  return `\x1b[31m${text}\x1b[0m`;
+}
+
 /** 解析后的 argv */
 export interface ParsedArgs {
   command: 'init' | 'list' | 'link' | 'status' | 'update' | 'unlink';
@@ -149,7 +159,7 @@ export async function main(args: string[] = process.argv.slice(2)): Promise<numb
 
     return 0;
   } catch (e: any) {
-    console.error(`Error: ${e.message}`);
+    console.error(red(`Error: ${e.message}`));
     return 1;
   }
 }

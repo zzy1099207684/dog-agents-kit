@@ -12,6 +12,13 @@ export const CONFIG_FILE = 'dak.config.json';
 /** 状态文件名 */
 export const STATE_FILE = '.dak-state.json';
 
+/**
+ * 指令文件的保留资源类型名。
+ * 不进 config.resourceTypes：它是单文件、跨 target 改名、落 target 根目录，
+ * 与 resources 的"目录 + 同名条目"映射规则不同。
+ */
+export const INSTRUCTIONS_TYPE = 'instructions';
+
 /** 默认配置 */
 export const DEFAULT_CONFIG: DakConfig = {
   store: DEFAULT_STORE,
@@ -20,15 +27,18 @@ export const DEFAULT_CONFIG: DakConfig = {
     'codex': {
       path: '~/.codex',
       resources: { skills: 'skills', hooks: 'hooks', agents: 'agents' },
+      instructions: 'AGENTS.md',
     },
     'claudecode': {
       path: '~/.claude',
       resources: { skills: 'skills', hooks: 'hooks', agents: 'agents' },
+      instructions: 'CLAUDE.md',
     },
     'dsh': {
       path: '~/.dsh',
       // dsh 没有 dak 意义的 agents 目录：它的 agent preset 在 ~/.dsh/.agent-presets，是 dsh 自有概念，不纳入管理
       resources: { skills: 'skills', hooks: 'hooks' },
+      instructions: 'AGENTS.md',
     },
   },
 };
